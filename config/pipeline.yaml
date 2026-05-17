@@ -1,0 +1,138 @@
+# 视频转录+RAG系统配置文件
+
+# 音频处理配置（适配Paraformer）
+audio:
+  ffmpeg_path: "ffmpeg/bin/ffmpeg.exe"
+  ffprobe_path: "ffmpeg/bin/ffprobe.exe"
+  samplerate: 16000      # Paraformer要求16kHz
+  channels: 1            # 单声道
+  bit_depth: 16          # 16bit PCM
+  format: "wav"          # 输出格式
+  codec: "pcm_s16le"     # PCM编码
+  delete_original: true
+
+# 转录配置（FunASR/Paraformer）
+transcription:
+  # 模型路径配置（支持本地路径或ModelScope模型ID）
+  # 本地路径示例: "models/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+  # ModelScope ID示例: "paraformer-zh"
+  model: "models/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+  
+  # 是否使用本地模型（离线模式）
+  # 自动检测规则: 路径以 models/ 开头 或包含 / \ 则视为本地模型
+  local_model: true
+  
+  # ModelScope版本（在线模式使用）
+  model_revision: "v2.0.4"
+  
+  device: "cuda"         # cuda/cpu
+  
+  # 批处理参数（断点续传粒度）
+  # 建议值: 60-300秒，太小会增加处理时间，太大可能影响长文本识别效果
+  batch_size_s: 60       # 秒，建议1-5分钟
+  
+  # 解码优化参数（提升识别准确率）
+  beam_size: 10          # 集束搜索宽度，越大越准但越慢 (推荐: 5-15)
+  decoding_ctc_weight: 0.0  # CTC解码权重 (0.0-1.0，0表示纯attention)
+  decoding_mode: "model1"   # 解码模式 (model1/mode2)
+  
+  # FFmpeg路径（用于音频加载）
+  ffmpeg_path: "ffmpeg/bin/ffmpeg.exe"
+  
+  # VAD模型（长音频分割，避免OOM）
+  vad_model: "models/speech_fsmn_vad_zh-cn-16k-common-pytorch"  # 本地VAD模型路径
+  
+  # 标点恢复模型（生成带标点的文本）
+  punc_model: "models/punc_ct-transformer_cn-en-common-vocab471067-large"  # 本地标点模型路径
+  
+  # 热词功能（可选）
+  # 提升特定词汇（如技术术语）的识别准确率
+  # 方式1: 直接配置热词字符串（逗号分隔）
+  hotword: ""            # 如 "PyTorch,神经网络,LangChain"
+  
+  # 方式2: 从文件加载热词（推荐，支持权重）
+  # 热词文件路径，相对路径会从项目根目录或config目录查找
+  hotword_file: "config/hotwords.txt"
+  
+  # 语言模型（可选，提升准确率但增加耗时）
+  # 注意: 这是N-gram语言模型，与Paraformer不同
+  lm_model: ""           # "models/speech_transformer_lm_zh-cn-common-vocab8404-pytorch"
+  lm_weight: 0.15
+  lm_beam_size: 10
+  
+  # ⚠️ 注意: Paraformer-large-vad-punc 已内置VAD和标点功能
+  # 无需单独配置 vad_model 和 punc_model
+
+# LLM配置
+llm:
+  model: "qwen-max"
+  api_key: "${QWEN_API_KEY}"
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  temperature: 0.3
+  max_tokens: 4096
+
+# 校对配置（模块3: LLM校正）
+correction:
+  # 规则校对
+  use_rule_correction: true
+  dictionary_entries: 71  # 内置ASR错误映射数量
+  
+  # PPL筛选（本地模型）
+  use_ppl_filter: true
+  ppl_model: "models/Qwen2.5-1.5B-Instruct"
+  ppl_device: "cpu"      # cpu/xpu（Intel Arc可用xpu加速）
+  ppl_batch_size: 16
+  
+  # PPL阈值
+  ppl_threshold_good: 100      # <100: 跳过
+  ppl_threshold_check: 400     # 100-400: 检查术语
+  ppl_threshold_bad: 1200      # >1200: 必须LLM
+  
+  # LLM批处理
+  use_llm_correction: true
+  llm_batch_size: 10          # 10条/prompt
+  llm_model: "qwen-max"
+  
+  # RAG检索
+  rag_top_k: 5
+  rag_max_context_length: 2000
+  
+  # 输出
+  save_correction_log: true   # 生成correction_log.json
+
+# RAG配置
+rag:
+  embedding_model: "models/bge-large-zh-v1.5"
+  embedding_device: "cpu"
+  output_dim: 1024
+  chunk_size: 512
+  chunk_overlap: 50
+  preserve_structure: true
+  vector_db: "chroma"
+  top_k: 5
+
+# 摘要配置
+summarization:
+  window_size: 300    # 5分钟
+  step_size: 120      # 2分钟
+  overlap: 60         # 60%重叠
+  granularity: 1.0    # 时间戳精度(秒)
+
+# 路径配置
+paths:
+  courses_dir: "courses"
+  cache_dir: ".cache"
+  vector_db_dir: "vector_db/course_materials"
+  knowledge_base_dir: "knowledge_base"
+  logs_dir: "logs"
+
+# MCP服务配置
+mcp:
+  name: "video-transcription-server"
+  version: "2.0.0"
+  transport: "stdio"  # stdio/sse
+  port: 8080
+  capabilities:
+    tools: true
+    resources: false
+    prompts: false
